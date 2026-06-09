@@ -1,7 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { kv } from '@vercel/kv';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const MEM_KEY = 'prasanna_twin_memories';
 
@@ -72,16 +72,12 @@ If nothing worth remembering, return [].
 Return ONLY the JSON array, nothing else.`;
 
       try {
-        const response = await client.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 300,
-          messages: [{ role: 'user', content: prompt }],
-        });
-        const raw = response.content[0].text.trim().replace(/```json|```/g, '').trim();
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        const result = await model.generateContent(prompt);
+        const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
         const items = JSON.parse(raw);
         if (!Array.isArray(items)) return res.json({ items: [] });
 
-        // Persist any extracted items to KV
         const validItems = items.filter(i => i.tag && i.text);
         if (validItems.length) {
           const existing = await kv.get(MEM_KEY);
@@ -94,7 +90,7 @@ Return ONLY the JSON array, nothing else.`;
         }
         return res.json({ items: validItems });
       } catch (e) {
-        return res.json({ items: [] }); // silent — memory extraction is best-effort
+        return res.json({ items: [] });
       }
     }
 
@@ -102,13 +98,21 @@ Return ONLY the JSON array, nothing else.`;
     if (action === 'chat') {
       const { messages, system } = req.body;
       try {
-        const response = await client.messages.create({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
-          system,
-          messages,
+        const model = genAI.getGenerativeModel({
+          model: 'gemini-2.0-flash',
+          systemInstruction: system,
         });
-        return res.json(response);
+        // Convert Anthropic-style messages to Gemini format
+        const history = messages.slice(0, -1).map(m => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        }));
+        const lastMessage = messages[messages.length - 1].content;
+        const chat = model.startChat({ history });
+        const result = await chat.sendMessage(lastMessage);
+        const text = result.response.text();
+        // Return in Anthropic-compatible shape so the frontend needs no changes
+        return res.json({ content: [{ text }] });
       } catch (e) {
         return res.status(500).json({ error: { type: 'api_error', message: e.message } });
       }
