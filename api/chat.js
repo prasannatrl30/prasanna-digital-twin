@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 import { kv } from '@vercel/kv';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const MEM_KEY = 'prasanna_twin_memories';
 
@@ -12,7 +12,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   if (req.method === 'GET') {
-    // Load memories
     try {
       const raw = await kv.get(MEM_KEY);
       return res.json({ memories: raw ? JSON.parse(raw) : [] });
@@ -22,7 +21,6 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    // Clear all memories OR delete one by id
     const { id } = req.body || {};
     try {
       if (id) {
@@ -43,7 +41,6 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { action } = req.body;
 
-    // ── SAVE MEMORY ──────────────────────────────────────────────────
     if (action === 'save_memory') {
       const { item } = req.body;
       try {
@@ -58,7 +55,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── EXTRACT LEARNINGS ─────────────────────────────────────────────
     if (action === 'extract') {
       const { userMsg, aiReply } = req.body;
       const prompt = `You are reading a conversation between Prasanna and his AI digital twin. Extract any NEW facts worth remembering about Prasanna's real situation — current projects, people, decisions, frustrations, goals, context. Only extract concrete, specific, useful facts. Ignore generic discussion.
@@ -72,9 +68,12 @@ If nothing worth remembering, return [].
 Return ONLY the JSON array, nothing else.`;
 
       try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-        const result = await model.generateContent(prompt);
-        const raw = result.response.text().trim().replace(/```json|```/g, '').trim();
+        const response = await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 300,
+          messages: [{ role: 'user', content: prompt }],
+        });
+        const raw = response.content[0].text.trim().replace(/```json|```/g, '').trim();
         const items = JSON.parse(raw);
         if (!Array.isArray(items)) return res.json({ items: [] });
 
@@ -94,25 +93,16 @@ Return ONLY the JSON array, nothing else.`;
       }
     }
 
-    // ── MAIN CHAT ─────────────────────────────────────────────────────
     if (action === 'chat') {
       const { messages, system } = req.body;
       try {
-        const model = genAI.getGenerativeModel({
-          model: 'gemini-2.0-flash',
-          systemInstruction: system,
+        const response = await client.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          system,
+          messages,
         });
-        // Convert Anthropic-style messages to Gemini format
-        const history = messages.slice(0, -1).map(m => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }],
-        }));
-        const lastMessage = messages[messages.length - 1].content;
-        const chat = model.startChat({ history });
-        const result = await chat.sendMessage(lastMessage);
-        const text = result.response.text();
-        // Return in Anthropic-compatible shape so the frontend needs no changes
-        return res.json({ content: [{ text }] });
+        return res.json(response);
       } catch (e) {
         return res.status(500).json({ error: { type: 'api_error', message: e.message } });
       }
