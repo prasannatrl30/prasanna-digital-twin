@@ -5,6 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Prasanna — Digital Twin</title>
 <style>
+/* PASSWORD GATE */
+#gate{position:fixed;inset:0;background:#F7F6F2;display:flex;align-items:center;justify-content:center;z-index:9999}
+#gate.hidden{display:none}
+.gate-box{background:#fff;border:.5px solid rgba(0,0,0,.14);border-radius:16px;padding:32px 28px;width:100%;max-width:320px;display:flex;flex-direction:column;gap:16px;text-align:center}
+.gate-avatar{width:44px;height:44px;border-radius:50%;background:#3C3489;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:#fff;margin:0 auto}
+.gate-title{font-size:15px;font-weight:500;color:#1A1916}
+.gate-sub{font-size:12px;color:#6B6860}
+.gate-input{width:100%;padding:10px 13px;border:.5px solid rgba(0,0,0,.14);border-radius:10px;font-size:14px;font-family:-apple-system,'Helvetica Neue',sans-serif;outline:none;text-align:center;letter-spacing:.1em;color:#1A1916}
+.gate-input:focus{border-color:#7F77DD;box-shadow:0 0 0 3px rgba(127,119,221,.1)}
+.gate-btn{width:100%;padding:10px;border-radius:10px;background:#3C3489;color:#fff;border:none;font-size:14px;font-weight:500;cursor:pointer;font-family:-apple-system,'Helvetica Neue',sans-serif}
+.gate-btn:hover{background:#4d44a0}
+.gate-err{font-size:12px;color:#8B2020;display:none}
+.gate-err.on{display:block}
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#F7F6F2;--surface:#FFF;--border:rgba(0,0,0,.08);--border-strong:rgba(0,0,0,.14);
@@ -99,6 +113,18 @@ textarea#inp::placeholder{color:var(--text3)}
 </style>
 </head>
 <body>
+<div id="gate">
+  <div class="gate-box">
+    <div class="gate-avatar">P</div>
+    <div>
+      <div class="gate-title">Prasanna's Digital Twin</div>
+      <div class="gate-sub">Enter password to continue</div>
+    </div>
+    <input class="gate-input" id="gate-inp" type="password" placeholder="••••••••" autocomplete="current-password">
+    <button class="gate-btn" onclick="checkPass()">Enter</button>
+    <div class="gate-err" id="gate-err">Wrong password</div>
+  </div>
+</div>
 <header>
   <div class="h-left">
     <div class="avatar">P</div>
@@ -521,6 +547,26 @@ async function send() {
   }
 
   busy = false; document.getElementById('send').disabled = false; inp.focus();
+}
+
+// ── PASSWORD GATE ─────────────────────────────────────────────────────
+const PASS = 'prasanna2025';
+function checkPass() {
+  const val = document.getElementById('gate-inp').value;
+  if (val === PASS) {
+    sessionStorage.setItem('auth', '1');
+    document.getElementById('gate').classList.add('hidden');
+  } else {
+    document.getElementById('gate-err').classList.add('on');
+    document.getElementById('gate-inp').value = '';
+    document.getElementById('gate-inp').focus();
+  }
+}
+document.getElementById('gate-inp').addEventListener('keydown', e => {
+  if (e.key === 'Enter') checkPass();
+});
+if (sessionStorage.getItem('auth') === '1') {
+  document.getElementById('gate').classList.add('hidden');
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────
