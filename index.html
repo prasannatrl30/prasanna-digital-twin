@@ -518,9 +518,15 @@ function handleImagePaste(file) {
   const reader = new FileReader();
   reader.onload = function(e) {
     const dataUrl = e.target.result;
-    const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
-    if (!match) return;
-    pendingImage = { base64: match[2], mediaType: match[1], dataUrl };
+    const semi = dataUrl.indexOf(';');
+    const comma = dataUrl.indexOf(',');
+    if (semi < 0 || comma < 0) return;
+    const mediaType = dataUrl.slice(5, semi);
+    const base64 = dataUrl.slice(comma + 1);
+    // Claude vision supports jpeg, png, gif, webp
+    const supported = ['image/jpeg','image/png','image/gif','image/webp'];
+    const mt = supported.includes(mediaType) ? mediaType : 'image/jpeg';
+    pendingImage = { base64, mediaType: mt, dataUrl };
     const fp = document.getElementById('fp');
     document.getElementById('fp-name').innerHTML =
       '<img src="' + dataUrl + '" style="height:36px;border-radius:5px;vertical-align:middle;margin-right:6px;">Image ready';
