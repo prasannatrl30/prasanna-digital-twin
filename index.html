@@ -177,7 +177,7 @@ textarea#inp::placeholder{color:var(--text3)}
     <div class="input-box">
       <textarea id="inp" placeholder="Ask Prasanna anything..." rows="1"></textarea>
       <label class="up-btn" title="Upload Excel or CSV">
-        <input type="file" id="file-in" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFile(this)">
+        <input type="file" id="file-in" accept=".xlsx,.xls,.csv,image/*" style="display:none" onchange="handleFileOrImage(this)">
         <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       </label>
     </div>
@@ -397,6 +397,7 @@ let history = [];
 let busy = false;
 let pendingFile = null;
 let pendingFileName = null;
+let pendingImage = null; // { base64, mediaType, dataUrl }
 
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -416,6 +417,17 @@ function autoResize(el) {
 document.getElementById('inp').addEventListener('input', function() { autoResize(this); });
 document.getElementById('inp').addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+document.getElementById('inp').addEventListener('paste', function(e) {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      handleImagePaste(item.getAsFile());
+      return;
+    }
+  }
 });
 
 function scrollBot() {
@@ -462,6 +474,12 @@ function addTyping() {
 }
 function removeTyping() { const el = document.getElementById('typing'); if (el) el.remove(); }
 
+function handleFileOrImage(input) {
+  const file = input.files[0]; if (!file) return;
+  if (file.type.startsWith('image/')) { handleImagePaste(file); input.value = ''; return; }
+  handleFile(input);
+}
+
 function handleFile(input) {
   const file = input.files[0]; if (!file) return;
   document.getElementById('sugs').style.display = 'none';
@@ -493,21 +511,58 @@ function handleFile(input) {
 function clearFile() {
   pendingFile = null; pendingFileName = null;
   document.getElementById('fp').classList.remove('on');
-  document.getElementById('inp').placeholder = 'Ask Prasanna anything...';
+  if (!pendingImage) document.getElementById('inp').placeholder = 'Ask Prasanna anything...';
+}
+
+function handleImagePaste(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const dataUrl = e.target.result;
+    const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (!match) return;
+    pendingImage = { base64: match[2], mediaType: match[1], dataUrl };
+    const fp = document.getElementById('fp');
+    document.getElementById('fp-name').innerHTML =
+      '<img src="' + dataUrl + '" style="height:36px;border-radius:5px;vertical-align:middle;margin-right:6px;">Image ready';
+    fp.classList.add('on');
+    document.getElementById('inp').placeholder = 'Add a note or just hit send to analyse...';
+    document.getElementById('sugs').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearImage() {
+  pendingImage = null;
+  if (!pendingFile) {
+    document.getElementById('fp').classList.remove('on');
+    document.getElementById('inp').placeholder = 'Ask Prasanna anything...';
+  }
 }
 
 async function send() {
   if (busy) return;
   const inp = document.getElementById('inp');
   const text = inp.value.trim();
-  if (!text && !pendingFile) return;
+  if (!text && !pendingFile && !pendingImage) return;
   document.getElementById('sugs').style.display = 'none';
   inp.value = ''; autoResize(inp);
   busy = true; document.getElementById('send').disabled = true;
 
   let userContent = '', displayHtml = '', rawUserText = text;
 
-  if (pendingFile) {
+  if (pendingImage) {
+    const img = pendingImage;
+    const caption = text || 'Analyse this image.';
+    userContent = [
+      { type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.base64 } },
+      { type: 'text', text: caption }
+    ];
+    displayHtml = '<div class="file-bubble"><img src="' + img.dataUrl + '" style="max-height:120px;max-width:220px;border-radius:8px;display:block;">' + (text ? '<div class="file-sub" style="margin-top:5px;">' + esc(text) + '</div>' : '') + '</div>';
+    rawUserText = 'image' + (text ? ' — ' + text : '');
+    clearImage();
+    if (!pendingFile) clearFile();
+    addMsg('user', displayHtml, true);
+  } else if (pendingFile) {
     const note = text ? '\n\nAdditional context: ' + text : '';
     userContent = 'I have uploaded a data file called "' + pendingFileName + '". Analyse it now.\n\nFile contents:\n' + pendingFile + note;
     displayHtml = '<div class="file-bubble"><div class="file-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div><div class="file-name">' + esc(pendingFileName) + '</div>' + (text ? '<div class="file-sub">' + esc(text) + '</div>' : '') + '</div></div>';
