@@ -580,14 +580,32 @@ async function send() {
     addMsg('user', '<p>' + esc(text) + '</p>');
   }
 
-  history.push({ role: 'user', content: userContent });
+  // For images, don't store base64 in history (too large, breaks subsequent messages)
+  // Store a text placeholder instead, send full content only for this request
+  const historyContent = (pendingImage === null && Array.isArray(userContent))
+    ? userContent // already cleared above, this won't trigger
+    : userContent;
+
+  if (Array.isArray(userContent)) {
+    // Image message — store text-only placeholder in history
+    const caption = text || 'Analyse this image.';
+    history.push({ role: 'user', content: '[Image attached] ' + caption });
+  } else {
+    history.push({ role: 'user', content: userContent });
+  }
+
+  // Build messages to send: replace last history entry with full content if image
+  const messagesToSend = Array.isArray(userContent)
+    ? [...history.slice(0, -1), { role: 'user', content: userContent }]
+    : history;
+
   addTyping();
 
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'chat', system: buildSP(), messages: history }),
+      body: JSON.stringify({ action: 'chat', system: buildSP(), messages: messagesToSend }),
     });
     const data = await res.json();
     removeTyping();
